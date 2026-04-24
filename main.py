@@ -7,6 +7,78 @@ from seismic_signal import SeismicSignal
 import numpy as np
 from scipy.optimize import least_squares
 
+def get_fragment(signal, dt=0.001, start_delay=0.1, window_len=3.0):
+    if signal.arrival_time < 0:
+        return [0], [0]
+    t_P = signal.arrival_time
+    idx_P = int(round(t_P / dt))
+    idx_start = idx_P + int(round(start_delay / dt))
+    idx_end = idx_start + int(round(window_len / dt))
+    return signal.ch1[idx_start:idx_end], signal.ch2[idx_start:idx_end]
+
+def calculate_displacement(ns_speed, ew_speed, dt=0.001, scale_to_um=1.0):
+    """
+        Интегрирует сигналы скорости (NS, EW) в смещение.
+
+            Параметры:
+        ----------
+        ns_speed, ew_speed : array_like
+            Фрагменты скорости (одинаковой длины) по каналам NS и EW.
+        dt : float
+            Шаг дискретизации (с).
+        scale_to_um : float, optional
+            Если задан, умножает полученное смещение на этот коэффициент.
+            Например, если исходная скорость в м/с, а нужно смещение в микронах,
+            то scale_to_um = 1e6. Если в мм/с - 1000.
+            Если скорость уже в мкм/с, scale_to_um = 1.0.
+            Если None, возвращает смещение в единицах скорость * секунда.
+
+        Возвращает:
+        ----------
+        disp_ns : np.ndarray
+            Смещение по каналу NS (в тех же единицах, что и скорость, умноженных на dt,
+            или масштабированное).
+        disp_ew : np.ndarray
+            Смещение по каналу EW.
+        horiz_disp : np.ndarray
+            Горизонтальное смещение = sqrt(disp_ns**2 + disp_ew**2).
+    """
+    ns = np.asarray(ns_speed)
+    ew = np.asarray(ew_speed)
+    if len(ns) != len(ew):
+        raise ValueError("Массивы NS и EW должны быть одинаковой длины")
+
+    # Интегрирование методом накопленной суммы (прямоугольники)
+    # displacement = sum(v_i * dt) для каждого i
+    disp_ns = np.cumsum(ns) * dt
+    disp_ew = np.cumsum(ew) * dt
+
+    # Если нужно масштабирование в микроны
+    if scale_to_um is not None:
+        disp_ns *= scale_to_um
+        disp_ew *= scale_to_um
+
+    horiz_disp = np.sqrt(disp_ns ** 2 + disp_ew ** 2)
+
+    return disp_ns, disp_ew, horiz_disp
+
+def calculate_distance(signal, explosion, in_kilometers=True):
+    """
+    Вычисляет расстояние от станции до взрыва
+
+    Возвращает:
+    ----------
+    distance : float
+        Расстояние от станции до эпицентра (в км, если in_kilometers=True, иначе в м).
+    """
+    dx = signal.x - explosion['x']
+    dy = signal.y - explosion['y']
+    dist_m = np.hypot(dx, dy)  # евклидово расстояние в метрах
+
+    if in_kilometers:
+        return dist_m / 1000.0
+    else:
+        return dist_m
 
 
 def locate_explosion(signals, speed=SeismicSignal.speed):
@@ -63,6 +135,44 @@ def locate_explosion(signals, speed=SeismicSignal.speed):
         'rms': rms,
         'success': result.success
     }
+
+def calculate_magnitude(signals, explosion, coef=2.0):
+    """
+    Вычисляет магнитуду
+
+     Возвращает:
+    ----------
+    ml_median : float
+        Медианная магнитуда по всем станциям.
+    station_results : list of dict
+        Список с результатами для каждой станции (станция, расстояние, амплитуда, период, магнитуда).
+    """
+
+    ml_values = []
+    station_results = []
+
+    for signal in signals.values():
+        ns, ew = get_fragment(signal)
+        disp_ns, disp_ew, horiz_disp = calculate_displacement(ns, ew)
+        a_max = np.max(horiz_disp)
+        if a_max <= 0:
+            continue
+        distance = calculate_distance(signal, explosion)
+
+        ml = np.log10(a_max) + np.log10(distance) + coef
+
+        ml_values.append(ml)
+
+        station_results.append({
+            'station_name': signal.station_name,
+            'amplitude': a_max,
+            'magnitude': ml
+        })
+
+    if not ml_values:
+        return np.nan, []
+
+    return np.median(ml_values), station_results
 
 def check_arrivals(signals):
     ok_signals = {}
@@ -160,7 +270,7 @@ def visualize_seismic(signal, name):
 
 def main():
     # 1. Указываем путь к файлу
-    data_file = 'data/longdata1.txt'
+    data_file = 'data/longdata3.txt'
 
     # 2. Инициализируем загрузчик и читаем данные
     print("Загрузка данных...")
@@ -214,11 +324,20 @@ def main():
     # for signal in ok_signal.values():
     #     print(signal.get_info())
 
-    # ok_signals = check_arrivals(signals)
-    # result = locate_explosion(ok_signals)
-    # print(f"Эпицентр: X={result['x']:.1f} м, Y={result['y']:.1f} м")
-    # print(f"Время взрыва t0 = {result['t0']:.3f} с")
-    # print(f"RMS = {result['rms']:.4f} с")
+    ok_signals = check_arrivals(signals)
+    explosion = locate_explosion(ok_signals)
+    print(f"Эпицентр: X={explosion['x']:.1f} м, Y={explosion['y']:.1f} м")
+    print(f"Время взрыва t0 = {explosion['t0']:.3f} с")
+    print(f"RMS = {explosion['rms']:.4f} с")
+
+    for signal in ok_signals.values():
+        print(f"{signal.station_name}: distance = {calculate_distance(signal, explosion)}")
+
+    ml, stations = calculate_magnitude(ok_signals, explosion)
+
+    print(f"Median ML: {ml}")
+    for station in stations:
+        print(f"Station {station['station_name']} magnitude: {station['magnitude']} and aplitude: {station['amplitude']}")
 
 if __name__ == '__main__':
     main()
