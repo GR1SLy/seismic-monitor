@@ -3,6 +3,9 @@ from scipy.signal import butter, filtfilt, detrend
 
 
 class SeismicSignal:
+
+    speed = 4097.8
+
     def __init__(self, station_name, ch1, ch2, ch3, fs=1000.0):
         """
         Инициализация сигнала станции.
@@ -13,9 +16,9 @@ class SeismicSignal:
         self.dt = 1.0 / fs
 
         # Переводим в numpy массивы для быстрых математических операций
-        self.ch1 = np.array(ch1)
-        self.ch2 = np.array(ch2)
-        self.ch3 = np.array(ch3)
+        self.ch1 = np.array(ch1) #NS
+        self.ch2 = np.array(ch2) #EW
+        self.ch3 = np.array(ch3) #UD
 
         # Длина сигнала
         self.n_samples = len(self.ch1)
@@ -23,6 +26,9 @@ class SeismicSignal:
         self.arrival_time = 0.0
         self.snr = 0.0
         self.peak_sta_lta = 0.0
+
+        self.x = 0.0
+        self.y = 0.0
 
     def get_info(self):
         return f"""\t\t==={self.station_name}===

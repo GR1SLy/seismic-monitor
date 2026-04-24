@@ -2,6 +2,67 @@ import matplotlib.pyplot as plt
 import numpy as np
 from data_io import DataLoader
 from picker import PhasePicker
+from seismic_signal import SeismicSignal
+
+import numpy as np
+from scipy.optimize import least_squares
+
+
+
+def locate_explosion(signals, speed=SeismicSignal.speed):
+    """
+    Определяет координаты взрыва (x0, y0) и время t0 по временам прихода сигнала
+    на сейсмических станциях.
+
+    Возвращает
+    ----------
+    dict
+        {
+            'x': float,        # координата эпицентра X (м)
+            'y': float,        # координата эпицентра Y (м)
+            't0': float,       # время взрыва (с)
+            'rms': float,      # среднеквадратичная невязка (с)
+            'success': bool    # успешна ли оптимизация
+        }
+    """
+    # Преобразуем signals в список для удобства
+    stations = list(signals.values())
+    if len(stations) < 3:
+        raise ValueError(f"Недостаточно станций: {len(stations)}. Нужно минимум 3.")
+
+    # Извлекаем массивы
+    xs = np.array([s.x for s in stations])
+    ys = np.array([s.y for s in stations])
+    times = np.array([s.arrival_time for s in stations])
+
+    # Функция невязки: для каждого станции разница между наблюдённым и предсказанным временем
+    def residuals(params):
+        x0, y0, t0 = params
+        dists = np.hypot(xs - x0, ys - y0)
+        t_pred = t0 + dists / speed
+        return times - t_pred
+
+    # Начальное приближение: центр тяжести станций, t0 = минимальное время - 0.5 с
+    x0_init = np.mean(xs)
+    y0_init = np.mean(ys)
+    t0_init = np.min(times) - 0.5
+    params_init = [x0_init, y0_init, t0_init]
+
+    # Оптимизация методом наименьших квадратов
+    result = least_squares(residuals, params_init, method='trf')
+    x0_opt, y0_opt, t0_opt = result.x
+
+    # Вычисляем RMS
+    final_res = residuals(result.x)
+    rms = np.sqrt(np.mean(final_res**2))
+
+    return {
+        'x': x0_opt,
+        'y': y0_opt,
+        't0': t0_opt,
+        'rms': rms,
+        'success': result.success
+    }
 
 def check_arrivals(signals):
     ok_signals = {}
@@ -41,6 +102,31 @@ def find_outliers_mad(signals, threshold=3.5):
 
     return res
 
+def set_coor(signals):
+    for signal in signals.values():
+        match signal.station_name:
+            case 'ST1':
+                signal.x = 558599.12
+                signal.y = 5941987.09
+            case 'ST2':
+                signal.x = 556918.94
+                signal.y = 5941443.52
+            case 'ST3':
+                signal.x = 559903.40
+                signal.y = 5945530.70
+            case 'ST4':
+                signal.x = 560192.49
+                signal.y = 5947214.54
+            case 'ST5':
+                signal.x = 559491.55
+                signal.y = 5944646.45
+            case 'ST6':
+                signal.x = 557619.37
+                signal.y = 5940428.39
+            case 'ST7':
+                signal.x = 562683.10
+                signal.y = 5948237.41
+
 def visualize_seismic(signal, name):
     """
     Функция для отрисовки всех трех каналов одной сейсмической станции.
@@ -74,12 +160,14 @@ def visualize_seismic(signal, name):
 
 def main():
     # 1. Указываем путь к файлу
-    data_file = 'data/longdata4.txt'
+    data_file = 'data/longdata1.txt'
 
     # 2. Инициализируем загрузчик и читаем данные
     print("Загрузка данных...")
     loader = DataLoader(data_file, fs=1000.0)
     signals = loader.load_signals()
+
+    set_coor(signals)
 
     if not signals:
         print("Ошибка: Сигналы не загружены. Проверьте данные.")
@@ -118,14 +206,19 @@ def main():
 
     plt.show()
 
-    for signal in signals.values():
-        print(signal.get_info())
+    # for signal in signals.values():
+    #     print(signal.get_info())
+    #
+    # print("================GOOD SIGNALS================")
+    #
+    # for signal in ok_signal.values():
+    #     print(signal.get_info())
 
-    print("================GOOD SIGNALS================")
-
-    ok_signal = check_arrivals(signals)
-    for signal in ok_signal.values():
-        print(signal.get_info())
+    # ok_signals = check_arrivals(signals)
+    # result = locate_explosion(ok_signals)
+    # print(f"Эпицентр: X={result['x']:.1f} м, Y={result['y']:.1f} м")
+    # print(f"Время взрыва t0 = {result['t0']:.3f} с")
+    # print(f"RMS = {result['rms']:.4f} с")
 
 if __name__ == '__main__':
     main()
