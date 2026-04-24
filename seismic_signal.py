@@ -20,9 +20,15 @@ class SeismicSignal:
         # Длина сигнала
         self.n_samples = len(self.ch1)
 
-        self.arrival_time = 0
-        self.snr = 0
-        self.peak_sta_lta = 0
+        self.arrival_time = 0.0
+        self.snr = 0.0
+        self.peak_sta_lta = 0.0
+
+    def get_info(self):
+        return f"""\t\t==={self.station_name}===
+        Arrival time = {self.arrival_time:.3f}
+        SNR: {'WEAK' if self.snr < 5 else 'OK'} ({self.snr:.3f})
+        Peak sta/lta = {self.peak_sta_lta:.3f}"""
 
     def preprocess(self, lowcut=1.0, highcut=25.0, order=4):
         """

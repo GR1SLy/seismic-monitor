@@ -94,7 +94,7 @@ class PhasePicker:
                         signal.snr = snr
 
                         status = "OK" if snr > 5.0 else "WEAK"
-                        print(f"Станция {st_name}: Время {signal.arrival_time:.3f} | SNR: {snr:.1f} [{status}]")
+                        print(f"Станция {st_name}: Время {signal.arrival_time:.3f} | SNR: {snr:.3f} [{status}]")
                     else:
                         signal.snr = 0
                 else:
@@ -103,7 +103,7 @@ class PhasePicker:
                 print(f"Станция {st_name}: Взрыв обнаружен на {arrival_time:.3f} сек (Пик STA/LTA: {np.max(sta_lta_curve):.1f})")
                 signal.peak_sta_lta = float(np.max(sta_lta_curve))
             else:
-                signal.arrival_time = None
+                signal.arrival_time = -1
                 print(f"[WARN] Станция {st_name}: Взрыв не обнаружен (Порог {threshold} не пробит).")
 
     def plot_picking(self, station_name):

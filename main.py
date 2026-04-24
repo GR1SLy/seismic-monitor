@@ -1,7 +1,45 @@
 import matplotlib.pyplot as plt
+import numpy as np
 from data_io import DataLoader
 from picker import PhasePicker
 
+def check_arrivals(signals):
+    ok_signals = {}
+    for signal in signals.values():
+        if signal.snr > 5:
+            ok_signals[signal.station_name] = signal
+    return find_outliers_mad(ok_signals)
+
+def find_outliers_mad(signals, threshold=3.5):
+    """
+    Функция для нахождения выбросов при нормальном SNR
+    """
+    signal_list = list(signals.values())
+
+    arrival_times = np.array([s.arrival_time for s in signal_list], dtype=float)
+
+    # --- Робастное обнаружение выбросов (MAD) ---
+    median = np.median(arrival_times)
+    abs_dev = np.abs(arrival_times - median)
+    mad = np.median(abs_dev)
+
+    if mad == 0:
+        return {s.station_name: s for s in signal_list}
+
+    # Модифицированный Z-критерий
+    modified_z = 0.6745 * (arrival_times - median) / mad
+
+    # Оставляем только те, у которых |Z| <= threshold (не выбросы)
+    inlier_mask = np.abs(modified_z) <= threshold
+
+    # Формируем результат
+    res = {}
+    for i, is_ok in enumerate(inlier_mask):
+        if is_ok:
+            sig = signal_list[i]
+            res[sig.station_name] = sig
+
+    return res
 
 def visualize_seismic(signal, name):
     """
@@ -65,28 +103,29 @@ def main():
     picker = PhasePicker(signals)
     picker.pick_arrivals(sta_sec=0.1, lta_sec=2.0, threshold=15)
 
-    picker.plot_picking('ST7')
-    picker.plot_picking('ST1')
-    picker.plot_picking('ST2')
-    picker.plot_picking('ST3')
-    picker.plot_picking('ST5')
-    picker.plot_picking('ST6')
+    # picker.plot_picking('ST1')
+    # picker.plot_picking('ST2')
+    # picker.plot_picking('ST3')
+    # picker.plot_picking('ST5')
+    # picker.plot_picking('ST6')
+    # picker.plot_picking('ST7')
+
 
     # 4. Вызов функции визуализации для каждой станции
     # for st_name, signal in signals.items():
     #     if st_name == 'ST1':
     #         visualize_seismic(signal, 'После фильтрации')
 
-    # for st_name, signal in signals.items():
-    #     visualize_seismic(signal)
-
-    # Отображаем все созданные окна с графиками разом
-    print("Графики выведены на экран. Закройте окна графиков, чтобы завершить программу.")
     plt.show()
 
+    for signal in signals.values():
+        print(signal.get_info())
 
-    for st_name, signal in signals.items():
-        print(st_name, signal.snr, signal.arrival_time, signal.peak_sta_lta)
+    print("================GOOD SIGNALS================")
+
+    ok_signal = check_arrivals(signals)
+    for signal in ok_signal.values():
+        print(signal.get_info())
 
 if __name__ == '__main__':
     main()
