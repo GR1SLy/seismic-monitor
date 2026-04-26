@@ -106,6 +106,85 @@ class PhasePicker:
                 signal.arrival_time = -1
                 print(f"[WARN] Станция {st_name}: Взрыв не обнаружен (Порог {threshold} не пробит).")
 
+    def pick_event_end(self, noise_win_sec=1.0, noise_factor=3.0,
+                       coda_factor=0.05, hold_sec=0.5, smooth_win_sec=0.2,
+                       max_dur_sec=15.0):
+        """
+        Адаптивный поиск окончания события.
+        Конец фиксируется, когда сглаженная огибающая падает ниже порога
+        и остаётся под ним hold_sec секунд.
+        Порог = максимум из (noise_factor * std шума) и (coda_factor * пик огибающей).
+        """
+        print("\n--- ПОИСК КОНЦА СОБЫТИЯ (ADAPTIVE THRESHOLD) ---")
+
+        for st_name, signal in self.signals.items():
+            if signal.arrival_time is None or signal.arrival_time < 0:
+                signal.end_time = -1
+                signal.duration = -1
+                continue
+
+            fs = signal.fs
+            dt = signal.dt
+            data = signal.ch3
+            idx_arr = int(signal.arrival_time * fs)
+
+            # 1. Оценка шума перед вступлением
+            n_noise = max(0, idx_arr - int(noise_win_sec * fs))
+            noise_std = np.std(data[n_noise:idx_arr])
+            noise_thresh = noise_factor * noise_std
+
+            # 2. Сглаженная огибающая (энергия)
+            win = max(1, int(smooth_win_sec * fs))
+            envelope = np.sqrt(np.convolve((data**2), np.ones(win) / win, mode='same'))
+            signal.envelope = envelope  # сохраним для графики
+
+            # 3. Окно поиска пика: [вступление, вступление + max_dur_sec]
+            idx_end_win = min(len(data), idx_arr + int(max_dur_sec * fs))
+            envelope_win = envelope[idx_arr:idx_end_win]
+            if len(envelope_win) == 0:
+                signal.end_time = signal.arrival_time
+                signal.duration = 0.0
+                continue
+
+            peak_val = np.max(envelope_win)
+            coda_thresh = coda_factor * peak_val
+
+            # 4. Итоговый адаптивный порог
+            threshold = max(noise_thresh, coda_thresh)
+            signal.used_end_threshold = threshold  # для отладки/визуализации
+
+            # 5. Поиск устойчивого перехода ниже порога после пика
+            hold_samples = int(hold_sec * fs)
+            idx_peak = idx_arr + np.argmax(envelope_win)
+            end_idx = idx_end_win  # по умолчанию конец окна
+            found = False
+
+            i = idx_peak
+            while i < idx_end_win - hold_samples:
+                if envelope[i] < threshold:
+                    if np.all(envelope[i:i + hold_samples] < threshold):
+                        end_idx = i
+                        found = True
+                        break
+                    else:
+                        # пропускаем ложное проседание
+                        viol = np.where(envelope[i:i + hold_samples] >= threshold)[0]
+                        i += viol[-1] + 1 if len(viol) > 0 else hold_samples
+                else:
+                    i += 1
+
+            if found:
+                signal.end_time = end_idx * dt
+            else:
+                # спада не нашли – берём границу поискового окна
+                signal.end_time = idx_end_win * dt
+
+            signal.duration = signal.end_time - signal.arrival_time
+
+            print(f"Станция {st_name}: пик={peak_val:.3e}, порог={threshold:.3e} "
+                  f"(шум*{noise_factor}={noise_thresh:.3e}, доля пика={coda_thresh:.3e})")
+            print(f"  Конец: {signal.end_time:.3f} с, длительность: {signal.duration:.3f} с")
+
     def plot_picking(self, station_name):
         """
         Рисует сигнал и график STA/LTA с линией срабатывания.
@@ -127,6 +206,8 @@ class PhasePicker:
         axes[0].plot(time_axis, signal.ch3, color='blue', linewidth=1)
         axes[0].axvline(x=signal.arrival_time, color='red', linestyle='--', linewidth=2,
                         label=f'Вступление: {signal.arrival_time:.3f} с')
+        axes[0].axvline(x=signal.end_time, color='red', linestyle='--', linewidth=2,
+                        label=f'Затухание: {signal.end_time:.3f} с')
         axes[0].set_ylabel('Амплитуда сигнала')
         axes[0].legend(loc='upper right')
         axes[0].grid(True, linestyle='--', alpha=0.6)
@@ -136,6 +217,7 @@ class PhasePicker:
         # Линия порога
         axes[1].axhline(y=5.0, color='gray', linestyle=':', linewidth=2, label='Порог срабатывания')
         axes[1].axvline(x=signal.arrival_time, color='red', linestyle='--', linewidth=2)
+        axes[1].axvline(x=signal.end_time, color='red', linestyle='--', linewidth=2)
         axes[1].set_ylabel('STA / LTA')
         axes[1].set_xlabel('Время (секунды)')
         axes[1].legend(loc='upper right')

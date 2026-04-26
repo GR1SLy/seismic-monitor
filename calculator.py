@@ -7,7 +7,9 @@ from seismic_signal import SeismicSignal
 class Calculator:
     def __init__(self):
         self.ml_median = 0.0
-        self.stations = []
+        self.ml_stations = []
+        self.md_median = 0.0
+        self.md_stations = []
         self.explosion = None
 
     def get_fragment(self, signal, dt=0.001, start_delay=0.1, window_len=3.0):
@@ -138,7 +140,7 @@ class Calculator:
         print(f"Взрыв локализован в {x0_opt:.1f}, {y0_opt:.1f}!")
         return self.explosion
 
-    def calculate_magnitude(self, signals, explosion, coef=2.0):
+    def calculate_local_magnitude(self, signals, explosion, coef=2.0):
         """
         Вычисляет магнитуду
 
@@ -151,7 +153,7 @@ class Calculator:
         """
         print("Вычисление магнитуды...")
         ml_values = []
-        self.stations = []
+        self.ml_stations = []
 
         for signal in signals.values():
             ns, ew = self.get_fragment(signal)
@@ -166,7 +168,7 @@ class Calculator:
             ml_values.append(ml)
 
             print(f"Магнитуда для {signal.station_name} найдена: {ml:.3f}!")
-            self.stations.append({
+            self.ml_stations.append({
                 'station_name': signal.station_name,
                 'amplitude': a_max,
                 'magnitude': ml
@@ -175,4 +177,24 @@ class Calculator:
         if not ml_values:
             return np.nan, []
         self.ml_median = np.median(ml_values)
-        return self.ml_median, self.stations
+        return self.ml_median, self.ml_stations
+
+    def calculate_code_magnitude(self, signals, explosion, coef_a=2.0, coef_b=0.0036, coef_c=-0.87):
+        md_values = []
+
+        for signal in signals.values():
+            distance = self.calculate_distance(signal, explosion)
+            md = coef_a * np.log10(signal.duration) + coef_b * distance + coef_c
+            md_values.append(md)
+
+            print(f"Магнитуда для {signal.station_name} найдена: {md:.3f}!")
+            self.md_stations.append({
+                'station_name': signal.station_name,
+                'magnitude': md
+            })
+
+        if not md_values:
+            return np.nan, []
+        self.md_median = np.median(md_values)
+        print(md_values)
+        return self.md_median, self.md_stations

@@ -101,7 +101,7 @@ def visualize_seismic(signal, name):
 
 def main():
     # 1. Указываем путь к файлу
-    data_file = 'data/longdata3.txt'
+    data_file = 'data/longdata1.txt'
 
     # 2. Инициализируем загрузчик и читаем данные
     print("Загрузка данных...")
@@ -127,7 +127,8 @@ def main():
 
     picker = PhasePicker(signals)
     print("Начинается пикирование данных...")
-    picker.pick_arrivals(sta_sec=0.1, lta_sec=2.0, threshold=15)
+    picker.pick_arrivals(threshold=15)
+    picker.pick_event_end(coda_factor=0.08)
     print("Взрывы найдены!")
 
     check = int(input("Для вывода графиков введите 1...\n"))
@@ -150,13 +151,22 @@ def main():
     for signal in ok_signals.values():
         print(f"{signal.station_name}: distance = {calc.calculate_distance(signal, explosion):.3f}")
 
-    calc.calculate_magnitude(ok_signals, explosion)
+    calc.calculate_local_magnitude(ok_signals, explosion)
     ml = calc.ml_median
-    stations = calc.stations
+    ml_stations = calc.ml_stations
 
     print(f"Median ML: {ml:.3f}")
-    for station in stations:
-        print(f"Station {station['station_name']} magnitude: {station['magnitude']:.3f} and aplitude: {station['amplitude']:.3f}")
+    for station in ml_stations:
+        print(f"Station {station['station_name']} magnitude: {station['magnitude']:.3f} and amplitude: {station['amplitude']:.3f}")
+
+    calc.calculate_code_magnitude(ok_signals, explosion)
+    md = calc.md_median
+    md_stations = calc.md_stations
+    print(f"Median MD: {md:.3f}")
+    for station in md_stations:
+        print(
+            f"Station {station['station_name']} magnitude: {station['magnitude']:.3f}")
+
 
 if __name__ == '__main__':
     main()

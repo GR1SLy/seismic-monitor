@@ -24,6 +24,8 @@ class SeismicSignal:
         self.n_samples = len(self.ch1)
 
         self.arrival_time = 0.0
+        self.end_time = 0.0
+        self.duration = 0.0
         self.snr = 0.0
         self.peak_sta_lta = 0.0
 
