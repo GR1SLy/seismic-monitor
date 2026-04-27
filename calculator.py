@@ -1,4 +1,5 @@
 import numpy as np
+from scipy.integrate import cumulative_trapezoid
 from scipy.optimize import least_squares
 from explosion import Explosion
 from seismic_signal import SeismicSignal
@@ -58,6 +59,8 @@ class Calculator:
 
         # Интегрирование методом накопленной суммы (прямоугольники)
         # displacement = sum(v_i * dt) для каждого i
+        ns = ns - np.mean(ns)
+        ew = ew - np.mean(ew)
         disp_ns = np.cumsum(ns) * dt
         disp_ew = np.cumsum(ew) * dt
 
@@ -140,7 +143,7 @@ class Calculator:
         print(f"Взрыв локализован в {x0_opt:.1f}, {y0_opt:.1f}!")
         return self.explosion
 
-    def calculate_local_magnitude(self, signals, explosion, coef=2.0):
+    def calculate_local_magnitude(self, signals, explosion):
         """
         Вычисляет магнитуду
 
@@ -156,14 +159,15 @@ class Calculator:
         self.ml_stations = []
 
         for signal in signals.values():
-            ns, ew = self.get_fragment(signal)
+            ns, ew = self.get_fragment(signal, window_len=signal.duration-0.5)
             disp_ns, disp_ew, horiz_disp = self.calculate_displacement(ns, ew)
             a_max = np.max(horiz_disp)
             if a_max <= 0:
                 continue
+            a_max *= 10e3
             distance = self.calculate_distance(signal, explosion)
 
-            ml = np.log10(a_max) + np.log10(distance) + coef
+            ml = np.log10(a_max) + 1.11 * np.log10(distance) + 0.00189 * distance - 2.09
 
             ml_values.append(ml)
 
@@ -179,7 +183,7 @@ class Calculator:
         self.ml_median = np.median(ml_values)
         return self.ml_median, self.ml_stations
 
-    def calculate_code_magnitude(self, signals, explosion, coef_a=2.0, coef_b=0.0036, coef_c=-0.87):
+    def calculate_code_magnitude(self, signals, explosion, coef_a=0.65, coef_b=-0.06, coef_c=3.35):
         md_values = []
 
         for signal in signals.values():

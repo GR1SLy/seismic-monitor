@@ -101,7 +101,7 @@ def visualize_seismic(signal, name):
 
 def main():
     # 1. Указываем путь к файлу
-    data_file = 'data/longdata1.txt'
+    data_file = 'data/longdata' + str(1) + '.txt'
 
     # 2. Инициализируем загрузчик и читаем данные
     print("Загрузка данных...")
@@ -119,7 +119,7 @@ def main():
     # 3. Предобработка сигнала (Detrend + Bandpass filter)
     print("Запуск предобработки (Detrend + Bandpass filter 1-30 Гц)...")
     for st_name, signal in signals.items():
-        signal.preprocess(lowcut=1.0, highcut=25.0)
+        signal.preprocess(lowcut=1.0, highcut=30.0)
         signal.denoise_by_profile(noise_end_sec=5.0)
 
 
@@ -144,29 +144,28 @@ def main():
     calc = Calculator()
     ok_signals = check_arrivals(signals)
     explosion = calc.locate_explosion(ok_signals)
-    print(f"Эпицентр: X={explosion.x:.1f} м, Y={explosion.y:.1f} м")
-    print(f"Время взрыва t0 = {explosion.t0:.3f} с")
-    print(f"RMS = {explosion.rms:.4f} с")
+    # print(f"Эпицентр: X={explosion.x:.1f} м, Y={explosion.y:.1f} м")
+    # print(f"Время взрыва t0 = {explosion.t0:.3f} с")
+    # print(f"RMS = {explosion.rms:.4f} с")
 
-    for signal in ok_signals.values():
-        print(f"{signal.station_name}: distance = {calc.calculate_distance(signal, explosion):.3f}")
+    # for signal in ok_signals.values():
+    #     print(f"{signal.station_name}: distance = {calc.calculate_distance(signal, explosion):.3f}")
 
     calc.calculate_local_magnitude(ok_signals, explosion)
     ml = calc.ml_median
-    ml_stations = calc.ml_stations
+    # ml_stations = calc.ml_stations
 
     print(f"Median ML: {ml:.3f}")
-    for station in ml_stations:
-        print(f"Station {station['station_name']} magnitude: {station['magnitude']:.3f} and amplitude: {station['amplitude']:.3f}")
+    # for station in ml_stations:
+    #     print(f"Station {station['station_name']} magnitude: {station['magnitude']:.3f} and amplitude: {station['amplitude']:.3f}")
 
-    calc.calculate_code_magnitude(ok_signals, explosion)
-    md = calc.md_median
-    md_stations = calc.md_stations
-    print(f"Median MD: {md:.3f}")
-    for station in md_stations:
-        print(
-            f"Station {station['station_name']} magnitude: {station['magnitude']:.3f}")
-
+    # calc.calculate_code_magnitude(ok_signals, explosion)
+    # md = calc.md_median
+    # md_stations = calc.md_stations
+    # print(f"Median MD: {md:.3f}")
+    # for station in md_stations:
+    #     print(
+    #         f"Station {station['station_name']} magnitude: {station['magnitude']:.3f}")
 
 if __name__ == '__main__':
     main()
