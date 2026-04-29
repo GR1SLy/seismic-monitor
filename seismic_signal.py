@@ -20,6 +20,8 @@ class SeismicSignal:
         self.ch2 = np.array(ch2) #EW
         self.ch3 = np.array(ch3) #UD
 
+        self.a_max = 0.0
+
         # Длина сигнала
         self.n_samples = len(self.ch1)
 

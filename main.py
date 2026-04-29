@@ -3,7 +3,7 @@ from calculator import Calculator
 from data_io import DataLoader
 from picker import PhasePicker
 import numpy as np
-
+from pathlib import Path
 
 def check_arrivals(signals):
     ok_signals = {}
@@ -98,41 +98,27 @@ def visualize_seismic(signal, name):
     # Компактное расположение графиков
     plt.tight_layout()
 
-
-def main():
-    # 1. Указываем путь к файлу
-    data_file = 'data/longdata' + str(1) + '.txt'
-
-    # 2. Инициализируем загрузчик и читаем данные
+def load_old(filename):
     print("Загрузка данных...")
-    loader = DataLoader(data_file, fs=1000.0)
+    loader = DataLoader(filename, fs=1000.0)
     signals = loader.load_signals()
-
-    set_coor(signals)
-
-    if not signals:
-        print("Ошибка: Сигналы не загружены. Проверьте данные.")
-        return
-
     print(f"Успешно загружены данные для {len(signals)} станций: {list(signals.keys())}")
+    return signals
 
-    # 3. Предобработка сигнала (Detrend + Bandpass filter)
+def preprocess(signals):
     print("Запуск предобработки (Detrend + Bandpass filter 1-30 Гц)...")
     for st_name, signal in signals.items():
         signal.preprocess(lowcut=1.0, highcut=30.0)
         signal.denoise_by_profile(noise_end_sec=5.0)
-
-
     print("Данные готовы!")
 
+def pick_signals(signals, graphics):
     picker = PhasePicker(signals)
     print("Начинается пикирование данных...")
     picker.pick_arrivals(threshold=15)
     picker.pick_event_end(coda_factor=0.08)
     print("Взрывы найдены!")
-
-    check = int(input("Для вывода графиков введите 1...\n"))
-    if check == 1:
+    if graphics == 1:
         picker.plot_picking('ST1')
         picker.plot_picking('ST2')
         picker.plot_picking('ST3')
@@ -141,31 +127,44 @@ def main():
         picker.plot_picking('ST7')
         plt.show()
 
+def old():
+
+    signals = load_old("data/longdata1.txt")
+
+    set_coor(signals)
+
+    preprocess(signals)
+
+    check = int(input("Для вывода графиков введите 1...\n"))
+    pick_signals(signals, check)
+
     calc = Calculator()
+
     ok_signals = check_arrivals(signals)
     explosion = calc.locate_explosion(ok_signals)
-    # print(f"Эпицентр: X={explosion.x:.1f} м, Y={explosion.y:.1f} м")
-    # print(f"Время взрыва t0 = {explosion.t0:.3f} с")
-    # print(f"RMS = {explosion.rms:.4f} с")
 
-    # for signal in ok_signals.values():
-    #     print(f"{signal.station_name}: distance = {calc.calculate_distance(signal, explosion):.3f}")
+    calc.calculate_max_displacement(ok_signals)
 
     calc.calculate_local_magnitude(ok_signals, explosion)
     ml = calc.ml_median
-    # ml_stations = calc.ml_stations
-
     print(f"Median ML: {ml:.3f}")
-    # for station in ml_stations:
-    #     print(f"Station {station['station_name']} magnitude: {station['magnitude']:.3f} and amplitude: {station['amplitude']:.3f}")
+
+    calc.calculate_intensity(ok_signals)
+    intensity = calc.intensity_median
+    print(f"Median intensity: {intensity:.3f}")
 
     # calc.calculate_code_magnitude(ok_signals, explosion)
     # md = calc.md_median
-    # md_stations = calc.md_stations
     # print(f"Median MD: {md:.3f}")
-    # for station in md_stations:
-    #     print(
-    #         f"Station {station['station_name']} magnitude: {station['magnitude']:.3f}")
+
+def new():
+    folder = Path("data/dirname")
+
+    for file in folder.iterdir():
+        if file.is_file():
+            filename = file.name
+            full_path = str(file)
+
 
 if __name__ == '__main__':
-    main()
+    old()

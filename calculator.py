@@ -1,3 +1,5 @@
+from unittest import signals
+
 import numpy as np
 from scipy.integrate import cumulative_trapezoid
 from scipy.optimize import least_squares
@@ -11,7 +13,8 @@ class Calculator:
         self.ml_stations = []
         self.md_median = 0.0
         self.md_stations = []
-        self.explosion = None
+        self.intensity_median = 0.0
+        self.intensity_stations = []
 
     def get_fragment(self, signal, dt=0.001, start_delay=0.1, window_len=3.0):
         """
@@ -72,6 +75,12 @@ class Calculator:
         horiz_disp = np.sqrt(disp_ns ** 2 + disp_ew ** 2)
 
         return disp_ns, disp_ew, horiz_disp
+
+    def calculate_max_displacement(self, signals):
+        for signal in signals.values():
+            ns, ew = self.get_fragment(signal, window_len=signal.duration - 0.5)
+            disp_ns, disp_ew, horiz_disp = self.calculate_displacement(ns, ew)
+            signal.a_max = np.max(horiz_disp)
 
     def calculate_distance(self, signal, explosion, in_kilometers=True):
         """
@@ -139,9 +148,9 @@ class Calculator:
         final_res = residuals(result.x)
         rms = np.sqrt(np.mean(final_res ** 2))
 
-        self.explosion = Explosion(x0_opt, y0_opt, t0_opt, rms)
+        explosion = Explosion(x0_opt, y0_opt, t0_opt, rms)
         print(f"Взрыв локализован в {x0_opt:.1f}, {y0_opt:.1f}!")
-        return self.explosion
+        return explosion
 
     def calculate_local_magnitude(self, signals, explosion):
         """
@@ -154,27 +163,23 @@ class Calculator:
         station_results : list of dict
             Список с результатами для каждой станции (станция, расстояние, амплитуда, период, магнитуда).
         """
-        print("Вычисление магнитуды...")
+        print("Вычисление локальной магнитуды...")
         ml_values = []
         self.ml_stations = []
 
         for signal in signals.values():
-            ns, ew = self.get_fragment(signal, window_len=signal.duration-0.5)
-            disp_ns, disp_ew, horiz_disp = self.calculate_displacement(ns, ew)
-            a_max = np.max(horiz_disp)
-            if a_max <= 0:
+            if signal.a_max <= 0:
                 continue
-            a_max *= 10e3
             distance = self.calculate_distance(signal, explosion)
 
-            ml = np.log10(a_max) + 1.11 * np.log10(distance) + 0.00189 * distance - 2.09
+            ml = np.log10(signal.a_max * 10e3) + 1.11 * np.log10(distance) + 0.00189 * distance - 2.09
 
             ml_values.append(ml)
 
             print(f"Магнитуда для {signal.station_name} найдена: {ml:.3f}!")
             self.ml_stations.append({
                 'station_name': signal.station_name,
-                'amplitude': a_max,
+                'amplitude': signal.a_max,
                 'magnitude': ml
             })
 
@@ -202,3 +207,25 @@ class Calculator:
         self.md_median = np.median(md_values)
         print(md_values)
         return self.md_median, self.md_stations
+
+    def calculate_intensity(self, signals):
+        intensity_values = []
+        self.intensity_stations = []
+
+        print(f"Вычисляется интенсивность...")
+        for signal in signals.values():
+            if signal.a_max <= 0:
+                continue
+
+            intensity = 1.47 * np.log10(signal.a_max * 10e-4) + 6.26 - 0.7
+            intensity_values.append(intensity)
+
+            print(f"Интенсивность для {signal.station_name} найдена: {intensity:.3f}!")
+            self.intensity_stations.append({
+                'station_name': signal.station_name,
+                'intensity': intensity
+            })
+        if not intensity_values:
+            return np.nan, []
+        self.intensity_median = np.median(intensity_values)
+        return self.intensity_median, self.intensity_stations
