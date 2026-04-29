@@ -119,12 +119,11 @@ def pick_signals(signals, graphics):
     picker.pick_event_end(coda_factor=0.08)
     print("Взрывы найдены!")
     if graphics == 1:
-        picker.plot_picking('ST1')
-        picker.plot_picking('ST2')
-        picker.plot_picking('ST3')
-        picker.plot_picking('ST5')
-        picker.plot_picking('ST6')
-        picker.plot_picking('ST7')
+        for st_name in signals:
+            picker.plot_picking(st_name)
+        plt.show()
+    elif graphics == 2:
+        picker.plot_picking_all()
         plt.show()
 
 def old():
@@ -135,7 +134,7 @@ def old():
 
     preprocess(signals)
 
-    check = int(input("Для вывода графиков введите 1...\n"))
+    check = int(input("Для вывода отдельных графиков введите 1\nДля просмотра всех графиков введите 2:\n"))
     pick_signals(signals, check)
 
     calc = Calculator()

@@ -34,7 +34,7 @@ class SeismicSignal:
         self.x = 0.0
         self.y = 0.0
 
-    def get_info(self):
+    def __str__(self):
         return f"""\t\t==={self.station_name}===
         Arrival time = {self.arrival_time:.3f}
         SNR: {'WEAK' if self.snr < 5 else 'OK'} ({self.snr:.3f})

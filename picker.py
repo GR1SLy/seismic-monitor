@@ -204,7 +204,7 @@ class PhasePicker:
 
         # 1. График самого сигнала (Канал 1)
         axes[0].plot(time_axis, signal.ch3, color='blue', linewidth=1)
-        axes[0].axvline(x=signal.arrival_time, color='red', linestyle='--', linewidth=2,
+        axes[0].axvline(x=signal.arrival_time, color='green', linestyle='--', linewidth=2,
                         label=f'Вступление: {signal.arrival_time:.3f} с')
         axes[0].axvline(x=signal.end_time, color='red', linestyle='--', linewidth=2,
                         label=f'Затухание: {signal.end_time:.3f} с')
@@ -216,7 +216,7 @@ class PhasePicker:
         axes[1].plot(time_axis, signal.sta_lta_curve, color='orange', linewidth=1.5, label='STA/LTA Отношение')
         # Линия порога
         axes[1].axhline(y=5.0, color='gray', linestyle=':', linewidth=2, label='Порог срабатывания')
-        axes[1].axvline(x=signal.arrival_time, color='red', linestyle='--', linewidth=2)
+        axes[1].axvline(x=signal.arrival_time, color='green', linestyle='--', linewidth=2)
         axes[1].axvline(x=signal.end_time, color='red', linestyle='--', linewidth=2)
         axes[1].set_ylabel('STA / LTA')
         axes[1].set_xlabel('Время (секунды)')
@@ -224,3 +224,56 @@ class PhasePicker:
         axes[1].grid(True, linestyle='--', alpha=0.6)
 
         plt.tight_layout()
+
+    def plot_picking_all(self):
+        """
+        Рисует сигнал и график STA/LTA для всех станций в одном окне.
+        Каждая станция представлена парой subplot: сигнал (канал 3) и кривая STA/LTA.
+        """
+        # Отбираем станции, для которых есть необходимые данные пикинга
+        valid_stations = [
+            (name, sig) for name, sig in self.signals.items()
+            if hasattr(sig, 'sta_lta_curve') and sig.arrival_time is not None
+        ]
+
+        if not valid_stations:
+            print("Нет данных пикинга ни для одной станции.")
+            return
+
+        n = len(valid_stations)
+        fig, axes = plt.subplots(nrows=2 * n, ncols=1, figsize=(12, 3 * n), sharex=True)
+
+        # Если станция только одна, axes — это одномерный массив из двух осей
+        if n == 1:
+            axes = [axes[0], axes[1]]
+
+        for i, (name, signal) in enumerate(valid_stations):
+            time_axis = [j * signal.dt for j in range(signal.n_samples)]
+
+            # Верхний график — сигнал (канал 3)
+            ax_sig = axes[2 * i]
+            ax_sig.plot(time_axis, signal.ch3, color='blue', linewidth=1)
+            ax_sig.axvline(x=signal.arrival_time, color='green', linestyle='--',
+                           linewidth=2, label=f'Вступление: {signal.arrival_time:.3f} с')
+            if signal.end_time is not None:
+                ax_sig.axvline(x=signal.end_time, color='red', linestyle='--',
+                               linewidth=2, label=f'Затухание: {signal.end_time:.3f} с')
+            ax_sig.set_ylabel(f'{name}\nАмплитуда', fontsize=9)
+            ax_sig.legend(loc='upper left', fontsize=8)
+            ax_sig.grid(True, linestyle='--', alpha=0.6)
+
+            # Нижний график — отношение STA/LTA
+            ax_sta = axes[2 * i + 1]
+            ax_sta.plot(time_axis, signal.sta_lta_curve, color='orange', linewidth=1.5,
+                        label='STA/LTA Отношение')
+            ax_sta.axvline(x=signal.arrival_time, color='green', linestyle='--', linewidth=2)
+            if signal.end_time is not None:
+                ax_sta.axvline(x=signal.end_time, color='red', linestyle='--', linewidth=2)
+            ax_sta.grid(True, linestyle='--', alpha=0.6)
+
+        # Общая подпись оси X для нижнего графика
+        axes[-1].set_xlabel('Время (секунды)')
+        fig.suptitle('Результат STA/LTA Пикинга — Все станции', fontsize=14, y=1.01)
+        mgn = fig.canvas.manager
+        mgn.resize(3000, 260*n)
+        plt.tight_layout(h_pad=0.05)
