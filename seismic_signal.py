@@ -21,6 +21,7 @@ class SeismicSignal:
         self.ch3 = np.array(ch3) #UD
 
         self.a_max = 0.0
+        self.distance = 0.0
 
         # Длина сигнала
         self.n_samples = len(self.ch1)
@@ -30,6 +31,7 @@ class SeismicSignal:
         self.duration = 0.0
         self.snr = 0.0
         self.peak_sta_lta = 0.0
+        self.ml = 0.0
 
         self.x = 0.0
         self.y = 0.0
@@ -38,7 +40,9 @@ class SeismicSignal:
         return f"""\t\t==={self.station_name}===
         Arrival time = {self.arrival_time:.3f}
         SNR: {'WEAK' if self.snr < 5 else 'OK'} ({self.snr:.3f})
-        Peak sta/lta = {self.peak_sta_lta:.3f}"""
+        Peak sta/lta = {self.peak_sta_lta:.3f}
+        A_max = {self.a_max:.3f}
+        Duration = {self.duration:.3f}"""
 
     def preprocess(self, lowcut=1.0, highcut=25.0, order=4):
         """
@@ -61,7 +65,7 @@ class SeismicSignal:
         self.ch2 = filtfilt(b, a, self.ch2)
         self.ch3 = filtfilt(b, a, self.ch3)
 
-    def denoise_by_profile(self, noise_end_sec=2.0):
+    def denoise_by_profile(self, noise_end_sec=4.0, alpha=1.0):
         """
         Подавляет шум, используя спектральный профиль начала записи.
         """
@@ -80,8 +84,8 @@ class SeismicSignal:
 
             # Мягкое вычитание спектра (Spectral Subtraction)
             # Мы уменьшаем амплитуды частот, которые доминируют в шуме
-            scale = 1.0 - (noise_amplitude / (np.abs(spec) + 1e-2))
-            scale = np.clip(scale, 0.1, 1.0)  # Не даем упасть в ноль, чтобы не убить сигнал
+            scale = 1.0 - alpha * (noise_amplitude / (np.abs(spec) + 1e-19))
+            scale = np.clip(scale, 0.001, 1.0)  # Не даем упасть в ноль, чтобы не убить сигнал
 
             new_spec = spec * scale
             setattr(self, attr, np.fft.irfft(new_spec, n=len(data)))

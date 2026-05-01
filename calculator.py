@@ -1,7 +1,6 @@
 from unittest import signals
 
 import numpy as np
-from scipy.integrate import cumulative_trapezoid
 from scipy.optimize import least_squares
 from explosion import Explosion
 from seismic_signal import SeismicSignal
@@ -26,9 +25,9 @@ class Calculator:
         idx_P = int(round(t_P / dt))
         idx_start = idx_P + int(round(start_delay / dt))
         idx_end = idx_start + int(round(window_len / dt))
-        return signal.ch1[idx_start:idx_end], signal.ch2[idx_start:idx_end]
+        return signal.ch1[idx_start:idx_end], signal.ch2[idx_start:idx_end], signal.ch3[idx_start:idx_end]
 
-    def calculate_displacement(self, ns_speed, ew_speed, dt=0.001, scale_to_um=1.0):
+    def calculate_displacement(self, ns_speed, ew_speed, ud_speed, dt=0.001, scale_to_um=1.0):
         """
             Интегрирует сигналы скорости (NS, EW) в смещение.
 
@@ -44,43 +43,41 @@ class Calculator:
                 то scale_to_um = 1e6. Если в мм/с - 1000.
                 Если скорость уже в мкм/с, scale_to_um = 1.0.
                 Если None, возвращает смещение в единицах скорость * секунда.
-
-            Возвращает:
-            ----------
-            disp_ns : np.ndarray
-                Смещение по каналу NS (в тех же единицах, что и скорость, умноженных на dt,
-                или масштабированное).
-            disp_ew : np.ndarray
-                Смещение по каналу EW.
-            horiz_disp : np.ndarray
-                Горизонтальное смещение = sqrt(disp_ns**2 + disp_ew**2).
         """
         ns = np.asarray(ns_speed)
         ew = np.asarray(ew_speed)
-        if len(ns) != len(ew):
-            raise ValueError("Массивы NS и EW должны быть одинаковой длины")
+        ud = np.asarray(ud_speed)
 
         # Интегрирование методом накопленной суммы (прямоугольники)
         # displacement = sum(v_i * dt) для каждого i
         ns = ns - np.mean(ns)
         ew = ew - np.mean(ew)
+        ud = ud - np.mean(ud)
         disp_ns = np.cumsum(ns) * dt
         disp_ew = np.cumsum(ew) * dt
+        disp_ud = np.cumsum(ud) * dt
 
         # Если нужно масштабирование в микроны
         if scale_to_um is not None:
             disp_ns *= scale_to_um
             disp_ew *= scale_to_um
+            disp_ud *= scale_to_um
 
-        horiz_disp = np.sqrt(disp_ns ** 2 + disp_ew ** 2)
+        vec_disp = np.sqrt(disp_ns ** 2 + disp_ew ** 2 + disp_ud ** 2)
 
-        return disp_ns, disp_ew, horiz_disp
+        return vec_disp
 
     def calculate_max_displacement(self, signals):
         for signal in signals.values():
-            ns, ew = self.get_fragment(signal, window_len=signal.duration - 0.5)
-            disp_ns, disp_ew, horiz_disp = self.calculate_displacement(ns, ew)
-            signal.a_max = np.max(horiz_disp)
+            ns, ew, ud = self.get_fragment(signal, window_len=3.0)
+            vec_disp = self.calculate_displacement(ns, ew, ud)
+            signal.a_max = np.max(vec_disp)
+
+    def calculate_distances(self, signals, explosion):
+        for signal in signals.values():
+            dx = signal.x - explosion.x
+            dy = signal.y - explosion.y
+            signal.distance = np.hypot(dx, dy) / 1000.0
 
     def calculate_distance(self, signal, explosion, in_kilometers=True):
         """
@@ -100,21 +97,14 @@ class Calculator:
         else:
             return dist_m
 
-    def locate_explosion(self, signals, speed=SeismicSignal.speed):
+    def __locate_explosion_3(self, signals, speed=SeismicSignal.speed):
         """
         Определяет координаты взрыва (x0, y0) и время t0 по временам прихода сигнала
         на сейсмических станциях.
-
         Возвращает
         ----------
-        dict
-            {
-                'x': float,        # координата эпицентра X (м)
-                'y': float,        # координата эпицентра Y (м)
-                't0': float,       # время взрыва (с)
-                'rms': float,      # среднеквадратичная невязка (с)
-                'success': bool    # успешна ли оптимизация
-            }
+        explosion : Explosion
+            Объект с атрибутами x, y, t0, speed, rms.
         """
         print("Поиск взрыва...")
         # Преобразуем signals в список для удобства
@@ -148,9 +138,107 @@ class Calculator:
         final_res = residuals(result.x)
         rms = np.sqrt(np.mean(final_res ** 2))
 
-        explosion = Explosion(x0_opt, y0_opt, t0_opt, rms)
+        explosion = Explosion(x0_opt, y0_opt, t0_opt, SeismicSignal.speed, rms)
         print(f"Взрыв локализован в {x0_opt:.1f}, {y0_opt:.1f}!")
         return explosion
+
+    def __locate_explosion_4(self, signals):
+        """
+        Определяет координаты взрыва (x0, y0) и время t0 по временам прихода
+        P-волны на станции при известной средней скорости v (случай В).
+        Возвращает
+        ----------
+        explosion : Explosion
+            Объект с атрибутами x, y, t0, speed, rms.
+        """
+        stations = list(signals.values())
+        if len(stations) < 4:
+            raise ValueError(
+                f"Недостаточно станций: {len(stations)}. Требуется минимум 4."
+            )
+
+        # Известная скорость
+        v = SeismicSignal.speed
+
+        xs = np.array([s.x for s in stations])
+        ys = np.array([s.y for s in stations])
+        times = np.array([s.arrival_time for s in stations])
+
+        def residuals(params):
+            x0, y0, t0 = params
+            dists = np.hypot(xs - x0, ys - y0)
+            t_pred = t0 + dists / v
+            return times - t_pred
+
+        # Начальные приближения
+        x0_init = np.mean(xs)
+        y0_init = np.mean(ys)
+        t0_init = np.min(times) - 0.5
+        params_init = [x0_init, y0_init, t0_init]
+
+        # Нелинейный МНК (алгоритм доверительной области)
+        result = least_squares(residuals, params_init, method='trf')
+        x0_opt, y0_opt, t0_opt = result.x
+
+        final_res = residuals(result.x)
+        rms = np.sqrt(np.mean(final_res ** 2))
+
+        explosion = Explosion(x0_opt, y0_opt, t0_opt, v, rms)
+        print(f"Взрыв локализован в {x0_opt:.1f}, {y0_opt:.1f}!")
+        return explosion
+
+
+    def __locate_explosion_5(self, signals, initial_speed=1.4):
+        """
+        Определяет координаты (x0, y0), время взрыва t0 и среднюю скорость v
+        по временам прихода P-волны на станции (случай Г – неизвестны ни t0, ни v).
+        Возвращает
+        ----------
+        explosion : Explosion
+            Объект с атрибутами x, y, t0, speed, rms.
+        """
+        stations = list(signals.values())
+        if len(stations) < 5:
+            raise ValueError(
+                f"Недостаточно станций: {len(stations)}. Требуется минимум 5."
+            )
+
+        xs = np.array([s.x for s in stations])
+        ys = np.array([s.y for s in stations])
+        times = np.array([s.arrival_time for s in stations])
+
+        def residuals(params):
+            x0, y0, t0, v = params
+            dists = np.hypot(xs - x0, ys - y0)
+            t_pred = t0 + dists / v
+            return times - t_pred
+
+        # Начальные приближения
+        x0_init = np.mean(xs)
+        y0_init = np.mean(ys)
+        # t0 берём чуть раньше самого раннего вступления
+        t0_init = np.min(times) - 0.5
+        params_init = [x0_init, y0_init, t0_init, initial_speed]
+
+        # Оптимизация (доверительная область)
+        result = least_squares(residuals, params_init, method='trf')
+        x0_opt, y0_opt, t0_opt, speed_opt = result.x
+
+        final_res = residuals(result.x)
+        rms = np.sqrt(np.mean(final_res ** 2))
+
+        explosion = Explosion(x0_opt, y0_opt, t0_opt, speed_opt, rms)
+        print(f"Взрыв локализован в {x0_opt:.1f}, {y0_opt:.1f}!")
+        return explosion
+
+    def locate_explosion(self, signals):
+        match len(signals):
+            case 3:
+                return self.__locate_explosion_3(signals)
+            case 4:
+                return self.__locate_explosion_4(signals)
+            case _:
+                return self.__locate_explosion_5(signals)
 
     def calculate_local_magnitude(self, signals, explosion):
         """
@@ -172,9 +260,10 @@ class Calculator:
                 continue
             distance = self.calculate_distance(signal, explosion)
 
-            ml = np.log10(signal.a_max * 10e3) + 1.11 * np.log10(distance) + 0.00189 * distance - 2.09
+            ml = np.log10(signal.a_max * 1e3) + 1.11 * np.log10(signal.distance) + 0.00189 * signal.distance - 2.09
 
             ml_values.append(ml)
+            signal.ml = ml
 
             print(f"Магнитуда для {signal.station_name} найдена: {ml:.3f}!")
             self.ml_stations.append({
