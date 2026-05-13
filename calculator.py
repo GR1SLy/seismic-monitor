@@ -217,7 +217,7 @@ class Calculator:
         x0_init = np.mean(xs)
         y0_init = np.mean(ys)
         # t0 берём чуть раньше самого раннего вступления
-        t0_init = np.min(times) - 0.5
+        t0_init = np.min(times) - 0.7
         params_init = [x0_init, y0_init, t0_init, initial_speed]
 
         # Оптимизация (доверительная область)

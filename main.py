@@ -6,6 +6,7 @@ import numpy as np
 from pathlib import Path
 import re
 import os
+import pyproj
 
 def check_arrivals(signals):
     ok_signals = {}
@@ -44,6 +45,7 @@ def find_outliers_mad(signals, threshold=3.5):
             res[sig.station_name] = sig
 
     return res
+
 
 def set_coor(signals):
     for signal in signals.values():
@@ -120,6 +122,8 @@ def all_stations_in():
     ok_signals = check_arrivals(signals)
     explosion = calc.locate_explosion(ok_signals)
     print(str(explosion))
+    # x, y =utm45n_to_wgs84(explosion.x, explosion.y)
+    # print(f"WGS84: {x} {y}")
     calc.calculate_max_displacement(ok_signals)
 
     calc.calculate_distances(signals, explosion)

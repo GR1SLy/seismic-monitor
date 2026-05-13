@@ -209,18 +209,18 @@ class PhasePicker:
         axes[0].axvline(x=signal.end_time, color='red', linestyle='--', linewidth=2,
                         label=f'Затухание: {signal.end_time:.3f} с')
         axes[0].set_ylabel('Амплитуда сигнала')
-        axes[0].legend(loc='upper right')
+        axes[0].legend(loc='upper right', fontsize='16')
         axes[0].grid(True, linestyle='--', alpha=0.6)
 
         # 2. График функции STA/LTA
         axes[1].plot(time_axis, signal.sta_lta_curve, color='orange', linewidth=1.5, label='STA/LTA Отношение')
         # Линия порога
-        axes[1].axhline(y=5.0, color='gray', linestyle=':', linewidth=2, label='Порог срабатывания')
+        axes[1].axhline(y=5.0, color='blue', linestyle=':', linewidth=3, label='Порог срабатывания')
         axes[1].axvline(x=signal.arrival_time, color='green', linestyle='--', linewidth=2)
         axes[1].axvline(x=signal.end_time, color='red', linestyle='--', linewidth=2)
         axes[1].set_ylabel('STA / LTA')
         axes[1].set_xlabel('Время (секунды)')
-        axes[1].legend(loc='upper right')
+        axes[1].legend(loc='upper right', fontsize='16')
         axes[1].grid(True, linestyle='--', alpha=0.6)
 
         plt.tight_layout()

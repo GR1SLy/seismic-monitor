@@ -15,8 +15,8 @@ idx_start = idx_P + int(round(0.1 / dt))
 idx_end = idx_start + int(round(5.0 / dt))
 signal_before = signals['ST3'].ch3[idx_start:idx_end]
 for s in signals.values():
-    s.preprocess(lowcut=1.0, highcut=20.0)
-    s.denoise_by_profile(noise_end_sec=7.0, alpha=0.5)
+    s.preprocess(lowcut=1.0, highcut=21.0)
+    s.denoise_by_profile(noise_end_sec=7.0, alpha=0.8)
 signal_after  = signals['ST3'].ch3[idx_start:idx_end]
 # -------------------------------------------------------
 
@@ -37,19 +37,21 @@ fig, axes = plt.subplots(2, 1, figsize=(12, 6))
 time = [i * dt for i in range(len(signal_before))]
 axes[0].plot(time, signal_before * 1.1, color='red', linewidth=1, label='До фильтрации')
 axes[0].plot(time, signal_after, color='green', linewidth=1.5, label='После фильтрации')
-axes[0].legend(loc='upper right')
-axes[0].set_title('Временной спектр')
+axes[0].legend(loc='lower left', fontsize='16')
+axes[0].set_title('Временной ряд')
 axes[0].set_ylabel('Амплитуда, мкм')
 axes[0].set_xlabel('Время, с')
 axes[0].set_xlim(0, 3)
+axes[0].grid(True, linestyle='--', alpha=0.3)
 
 axes[1].plot(freq_b, ampl_b, color='red', linewidth=1, label='До фильтрации')
 axes[1].plot(freq_a, ampl_a, color='green', linewidth=1.5, label='После фильтрации')
-axes[1].legend(loc='upper right')
+axes[1].legend(loc='upper right', fontsize='16')
 axes[1].set_title('Частотный спектр')
 axes[1].set_ylabel('Амплитуда, мкм')
 axes[1].set_xlabel('Частота, гц')
 axes[1].set_xlim(0, 40)
+axes[1].grid(True, linestyle='--', alpha=0.3)
 
 plt.tight_layout()
 plt.show()
