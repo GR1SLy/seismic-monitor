@@ -1,6 +1,7 @@
+from collections import deque
 import numpy as np
 import matplotlib.pyplot as plt
-
+import time
 
 class PhasePicker:
     def __init__(self, signals_dict):
@@ -277,3 +278,126 @@ class PhasePicker:
         mgn = fig.canvas.manager
         mgn.resize(3000, 260*n)
         plt.tight_layout(h_pad=0.05)
+
+    def _stream_sta_lta(self, data, station, dt=0.001, sta_window=0.1, lta_window=2.0, history_sec=5.0, k=10, epsilon=1e-8):
+        """
+        Имитация потокового STA/LTA‑детектора с адаптивным порогом.
+
+        Параметры:
+            data        : одномерный numpy-массив отсчётов сигнала.
+            dt          : период дискретизации в секундах (по умолчанию 0.001 с = 1 мс).
+            sta_window  : длина короткого окна STA в секундах.
+            lta_window  : длина длинного окна LTA в секундах.
+            k           : множитель для порога (порог = медиана + k * MAD).
+            epsilon     : малая константа для защиты от деления на ноль.
+        """
+        start = time.perf_counter()
+        sta_lta_curve = []
+        moments = []
+        thresholds = {}
+        n_sta = int(sta_window / dt)  # длина STA в отсчётах (100)
+        n_lta = int(lta_window / dt)  # длина LTA в отсчётах (2000)
+        n_history = int(history_sec / dt)
+        # Кольцевые буферы для характеристической функции (cf)
+        sta_cf = deque(maxlen=n_sta)  # хранит последние n_sta значений cf
+        lta_cf = deque(maxlen=n_lta)  # хранит последние n_lta значений cf
+
+        # Буфер для значений STA/LTA (длина n_lta)
+        extended_buffer_len = n_lta + n_history
+        sta_lta_buffer = deque(maxlen=extended_buffer_len)
+        # sta_lta_buffer = deque(maxlen=n_lta)
+
+        # Накопительные суммы для быстрого обновления средних
+        sum_sta = 0.0
+        sum_lta = 0.0
+
+        # Флаг события, чтобы порог не насчитывал высокие амплитуды события
+        event = False
+
+        # Главный цикл – последовательная обработка каждого нового отсчёта
+        for idx, sample in enumerate(data):
+            t = idx * dt  # текущее время в секундах
+            cf = sample ** 2  # характеристическая функция (энергия)
+
+            # --- Обновление короткого окна STA ---
+            oldest_sta = sta_cf[0] if len(sta_cf) == n_sta else 0.0
+            sta_cf.append(cf)
+            sum_sta += cf - oldest_sta
+            sta = sum_sta / len(sta_cf)  # среднее в коротком окне
+
+            # --- Обновление длинного окна LTA ---
+            oldest_lta = lta_cf[0] if len(lta_cf) == n_lta else 0.0
+            lta_cf.append(cf)
+            sum_lta += cf - oldest_lta
+            lta = sum_lta / len(lta_cf)  # среднее в длинном окне
+
+            # Текущее значение STA/LTA с защитой от деления на ноль
+            sta_lta_val = sta / (lta + epsilon)
+
+            # Добавляем значение в кольцевой буфер STA/LTA
+            if not event:
+                sta_lta_buffer.append(sta_lta_val)
+            sta_lta_curve.append(sta_lta_val)
+
+            # Детекция возможна только после заполнения длинного буфера STA/LTA
+            if len(sta_lta_buffer) < n_lta:
+                continue  # недостаточно истории для надёжного порога
+
+            # --- Адаптивный порог по содержимому STA/LTA буфера ---
+            # Исключаем самое свежее значение (текущий отсчёт), чтобы событие
+            # не завышало собственный порог.
+            background = list(sta_lta_buffer)[:-1]  # n_lta - 1 элементов
+            median_val = np.median(background)
+            mad_val = np.median(np.abs(background - median_val))
+            threshold = median_val + k * mad_val
+            thresholds[t] = threshold
+
+            # Проверка на превышение порога
+            if sta_lta_val > threshold:
+                moments.append(t)
+                event = True
+                print(f"Событие {station} на {t:.4f} с, порог: {threshold:.4f}, STA/LTA: {sta_lta_val:.4f}")
+            else:
+                event = False
+
+        end = time.perf_counter()
+        print(f"Time res: {end - start:.4f} s")
+
+        time_x = [i * dt for i in range(len(data))]
+        # fig, axes = plt.subplots(nrows=2, ncols=1, figsize=(12, 6), sharex=True)
+        # axes[0] = (time_x, data, color='blue', linewidth=1)
+        # axes[1] = (time_x, sta_lta_curve, color='yellow', linewidth=1)
+        # plt.tight_layout()
+        # plt.show()
+        self.plotting(time_x, data, sta_lta_curve, moments, thresholds, station)
+
+    def stream_sta_lta(self, signals, threshold=10, history_sec=5.0):
+        for st_name, signal in signals.items():
+            self._stream_sta_lta(signal.ch3, st_name, k=threshold, history_sec=history_sec)
+
+    def plotting(self, time_axis, data, sta_lta_curve, moments, thresholds, station):
+        fig, axes = plt.subplots(nrows=2, ncols=1, figsize=(12, 6), sharex=True)
+        fig.suptitle(f'Результат STA/LTA Пикинга - Станция {station}', fontsize=14)
+
+        # 1. График самого сигнала
+        axes[0].plot(time_axis, data, color='blue', linewidth=1)
+        axes[0].set_ylabel('Амплитуда сигнала')
+        axes[0].legend(loc='upper right', fontsize='16')
+        axes[0].grid(True, linestyle='--', alpha=0.6)
+        for i in moments:
+            axes[0].axvline(x=i, color='red', linestyle='--', linewidth=0.1)
+
+        # 2. График функции STA/LTA
+        axes[1].plot(time_axis, sta_lta_curve, color='orange', linewidth=1.5, label='STA/LTA Отношение')
+        axes[1].set_ylabel('STA / LTA')
+        axes[1].set_xlabel('Время (секунды)')
+        axes[1].legend(loc='upper right', fontsize='16')
+        axes[1].grid(True, linestyle='--', alpha=0.6)
+        # for i in moments:
+        #     axes[1].axvline(x=i, color='red', linestyle='--', linewidth=0.1)
+        xx = list(thresholds.keys())
+        yy = list(thresholds.values())
+        axes[1].plot(xx, yy, color='blue', linewidth=0.3)
+
+        plt.tight_layout()
+        plt.show()

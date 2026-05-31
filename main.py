@@ -137,6 +137,18 @@ def all_stations_in():
     intensity = calc.intensity_median
     print(f"Median intensity: {intensity:.3f}")
 
+def streaming_sta_lta():
+    signals = load("data/boom/longdata2.txt", type="ALL")
+
+    set_coor(signals)
+
+    preprocess(signals)
+
+    picker = PhasePicker(signals)
+    print("Начинается пикирование данных...")
+    # picker.pick_arrivals(threshold=20)
+    picker.stream_sta_lta(signals, threshold=12, history_sec=15.0)
+
 def per_station():
     folder = Path("data/new/ST7")
 
@@ -215,7 +227,8 @@ def all_booms():
     for res in result:
         print(res)
 if __name__ == '__main__':
-    all_stations_in()
+    # all_stations_in()
+    streaming_sta_lta()
     # test()
     # all_booms()
 
